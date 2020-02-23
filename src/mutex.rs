@@ -48,7 +48,7 @@ impl<T> Mutex<T> {
             };
             if self.is_poisoned() {
                 Err(TryLockError::Poisoned(
-                    std::sync::PoisonError::new(returned_guard),
+                    PoisonError::new(returned_guard),
                 ))
             } else {
                 Ok(returned_guard)
