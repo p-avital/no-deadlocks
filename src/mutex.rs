@@ -59,7 +59,15 @@ impl<T> Mutex<T> {
     }
 
     pub fn lock(&self) -> LockResult<MutexGuard<T>> {
-        unimplemented!()
+        loop {
+            match self.try_lock() {
+                Ok(result) => return Ok(result),
+                Err(TryLockError::Poisoned(err)) => return Err(err),
+                Err(TryLockError::WouldBlock) => {
+                    // TODO: request introspection here
+                }
+            }
+        }
     }
 }
 
