@@ -7,4 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vector-map = ""
+vector-map = {version="", optional=true}
+
+[features]
+use_vecmap = ["vector-map"]
+default = ["use_vecmap"]

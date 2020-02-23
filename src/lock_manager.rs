@@ -60,10 +60,15 @@ impl<'l> std::ops::DerefMut for LockManagerWriteGuard<'l> {
      }
 }
 
+#[cfg(feature = "use_vecmap")]
+type Map<K, V> = vector_map::VecMap<K, V>;
+#[cfg(not(feature = "use_vecmap"))]
+type Map<K, V> = std::collections::HashMap<K, V>;
+
 pub struct LockManager {
     lock: AtomicCount,
     next_key: usize,
-    pub(crate) locks: vector_map::VecMap<usize, LockRepresentation>
+    pub(crate) locks: Map<usize, LockRepresentation>
 }
 
 impl LockManager {
@@ -86,8 +91,7 @@ impl LockManager {
     pub fn create_lock(&self) -> usize {
         let mut guard = self.write_lock();
         let key = guard.next_key;
-        guard.next_key += 1;
-        unsafe {guard.locks.inner_mut().push((key, LockRepresentation::new()))};
+        guard.next_key += 1;guard.locks.insert(key, LockRepresentation::new());
         key
     }
 
