@@ -10,3 +10,10 @@ Because the Law of Equivalent Exchange is very specific: by getting these awesom
 As a rule of thumb, I suggest using `deadlocks_debugger` when debugging your application, before switching your `use deadlocks_debugger::...` to their `std::sync` equivalents. 
 
 Remember that deadlocks are very much tied to timing issues which you might not encounter systematically, so please be thorough with your testing :)
+
+## What's next for this crate?
+For now, I want to find the nicest way I can to relay the Deadlock Error to the user. I opted for `panic` because deadlocks are usually non-recoverable states anyway, and mostly because I wanted to keep `std::sync`'s signatures as much as possible, but I'm open to suggestions.
+
+I also need to get the debugging experience to be nice. As of writing this README, the infrastructure to give great traces on the deadlocks is here, but the formatting is very lacking.
+
+As for future progress, feel free to write up an issue to let me know what you'd like :)

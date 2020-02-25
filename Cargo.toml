@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 vector-map = {version="", optional=true}
+backtrace = "0.3"
 
 [features]
 use_vecmap = ["vector-map"]

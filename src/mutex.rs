@@ -60,12 +60,23 @@ impl<T> Mutex<T> {
 
     pub fn lock(&self) -> LockResult<MutexGuard<T>> {
         loop {
-            match self.try_lock() {
-                Ok(result) => return Ok(result),
-                Err(TryLockError::Poisoned(err)) => return Err(err),
-                Err(TryLockError::WouldBlock) => {
-                    // TODO: request introspection here
+            let mut guard = self.manager.write_lock();
+            let representation = guard.locks.get_mut(&self.key).unwrap();
+            if representation.try_write_lock() {
+                let returned_guard = MutexGuard {
+                    inner: unsafe { &mut *(self as *const _ as *mut _) },
+                };
+                if self.is_poisoned() {
+                    return Err(
+                    PoisonError::new(returned_guard),
+                    )
+                } else {
+                    return Ok(returned_guard)
                 }
+            } else {
+                representation.subscribe_write();
+                guard.analyse();
+                std::thread::yield_now();
             }
         }
     }

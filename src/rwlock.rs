@@ -71,24 +71,42 @@ impl<T> RwLock<T> {
 
     pub fn read(&self) -> LockResult<RwLockReadGuard<T>> {
         loop {
-            match self.try_read() {
-                Ok(result) => return Ok(result),
-                Err(TryLockError::Poisoned(err)) => return Err(err),
-                Err(TryLockError::WouldBlock) => {
-                    // TODO: run introspection
+            let mut guard = self.manager.write_lock();
+            let representation = guard.locks.get_mut(&self.key).unwrap();
+            if representation.try_read_lock() {
+                let returned_guard = RwLockReadGuard {
+                    inner: &self,
+                };
+                if self.is_poisoned() {
+                    return Err(PoisonError::new(returned_guard))
+                } else {
+                    return Ok(returned_guard)
                 }
+            } else {
+                representation.subscribe_read();
+                guard.analyse();
+                std::thread::yield_now();
             }
         }
     }
 
     pub fn write(&self) -> LockResult<RwLockWriteGuard<T>> {
         loop {
-            match self.try_write() {
-                Ok(result) => return Ok(result),
-                Err(TryLockError::Poisoned(err)) => return Err(err),
-                Err(TryLockError::WouldBlock) => {
-                    // TODO: run introspection
+            let mut guard = self.manager.write_lock();
+            let representation = guard.locks.get_mut(&self.key).unwrap();
+            if representation.try_write_lock() {
+                let returned_guard = RwLockWriteGuard {
+                    inner: unsafe { &mut *(self as *const _ as *mut _) },
+                };
+                if self.is_poisoned() {
+                    return Err(PoisonError::new(returned_guard))
+                } else {
+                    return Ok(returned_guard)
                 }
+            } else {
+                representation.subscribe_write();
+                guard.analyse();
+                std::thread::yield_now();
             }
         }
     }
