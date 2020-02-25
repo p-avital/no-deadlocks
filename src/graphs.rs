@@ -8,13 +8,13 @@ impl<NodeType: std::cmp::PartialEq> Graph<NodeType> {
     pub fn new() -> Self {
         Graph {nodes: Map::new()}
     }
-
+    #[allow(dead_code)]
     pub fn add_node(&mut self, node: NodeType) {
         if !self.nodes.contains_key(&node) {
             self.nodes.insert(node, Set::new());
         }
     }
-
+    #[allow(dead_code)]
     pub fn add_edge(&mut self, from: &NodeType, to: NodeType) {
         self.nodes.get_mut(from).unwrap().insert(to, ());
     }

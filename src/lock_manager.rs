@@ -4,27 +4,12 @@ use std::sync::atomic::AtomicI32 as AtomicCount;
 
 use backtrace::Backtrace;
 
-use crate::{Map, Set};
+use crate::Map;
 
 static mut GLOBAL_MANAGER: Option<Arc<LockManager>> = None;
 
 pub struct LockManagerReadGuard<'l> {
     inner: &'l LockManager
-}
-
-impl<'l> LockManagerReadGuard<'l> {
-    pub fn try_upgrade<'u>(self) -> Result<LockManagerWriteGuard<'u>, Self> {
-        if self.inner.lock.compare_and_swap(1, -1, Ordering::Relaxed) == 1 {
-            Ok(LockManagerWriteGuard {inner: unsafe {&mut *(self.inner as *const _ as *mut _)}})
-        } else {
-            Err(self)
-        }
-    }
-
-    pub fn upgrade<'u>(self) -> LockManagerWriteGuard<'u> {
-        while self.inner.lock.compare_and_swap(1, -1, Ordering::Relaxed) != 1 {}
-        LockManagerWriteGuard {inner: unsafe {&mut *(self.inner as *const _ as *mut _)}}
-    }
 }
 
 impl<'l> Drop for LockManagerReadGuard<'l> {
@@ -93,6 +78,7 @@ impl LockManager {
         key
     }
 
+    #[allow(dead_code)]
     pub(crate) fn read_lock(&self) -> LockManagerReadGuard {
         let mut state = self.lock.load(Ordering::Relaxed);
         loop {
@@ -214,17 +200,17 @@ fn deadlock_detection() {
     use crate::Mutex;
     let mut1 = Arc::new(Mutex::new(0));
     let mut2 = Arc::new(Mutex::new(0));
-    let guard1 = mut1.lock();
+    let _guard1 = mut1.lock();
     std::thread::spawn({
         let mut1 = mut1.clone();
         let mut2 = mut2.clone();
         move ||{
-            let guard2 = mut2.lock();
-            let guard1 = mut1.lock();
+            let _guard2 = mut2.lock();
+            let _guard1 = mut1.lock();
             std::thread::sleep(std::time::Duration::from_millis(200));
     }});
     std::thread::sleep(std::time::Duration::from_millis(100));
-    let guard2 = mut2.lock();
+    let _guard2 = mut2.lock();
 }
 
 #[test]
@@ -233,15 +219,15 @@ fn no_deadlock_detection() {
     use crate::Mutex;
     let mut1 = Arc::new(Mutex::new(0));
     let mut2 = Arc::new(Mutex::new(0));
-    let guard1 = mut1.lock();
+    let _guard1 = mut1.lock();
     std::thread::spawn({
         let mut1 = mut1.clone();
         let mut2 = mut2.clone();
         move ||{
-            let guard1 = mut1.lock();
-            let guard2 = mut2.lock();
+            let _guard1 = mut1.lock();
+            let _guard2 = mut2.lock();
             std::thread::sleep(std::time::Duration::from_millis(200));
     }});
     std::thread::sleep(std::time::Duration::from_millis(100));
-    let guard2 = mut2.lock();
+    let _guard2 = mut2.lock();
 }
