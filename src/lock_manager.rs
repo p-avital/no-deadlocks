@@ -183,7 +183,11 @@ impl LockRepresentation {
     }
 
     pub fn subscribe_write(&mut self) {
-        self.requests.insert(std::thread::current().id(), (RequestType::Write, Backtrace::new_unresolved()));
+        let id = std::thread::current().id();
+        if let Some((RequestType::Write, _)) = self.requests.get(&id) {
+            return
+        }
+        self.requests.insert(id, (RequestType::Write, Backtrace::new_unresolved()));
     }
 
     /// Returns `true` if read_lock succeeded
@@ -197,7 +201,11 @@ impl LockRepresentation {
     }
 
     pub fn subscribe_read(&mut self) {
-        self.requests.insert(std::thread::current().id(), (RequestType::Read, Backtrace::new_unresolved()));
+        let id = std::thread::current().id();
+        if let Some((RequestType::Read, _)) = self.requests.get(&id) {
+            return
+        }
+        self.requests.insert(id, (RequestType::Read, Backtrace::new_unresolved()));
     }
 
     pub fn unlock(&mut self) {

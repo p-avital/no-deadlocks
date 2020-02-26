@@ -1,8 +1,12 @@
 [package]
-name = "deadlocks_debugger"
+name = "no_deadlocks"
 version = "0.1.0"
+keywords = ["deadlock", "Mutex", "RwLock", "locks"]
 authors = ["Pierre Avital <pierre.avital@me.com>"]
 edition = "2018"
+license = "MPL-2.0"
+readme = "README.md"
+description = "A Runtime Deadlock Debugger"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
