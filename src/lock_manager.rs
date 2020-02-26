@@ -116,6 +116,22 @@ impl LockManager {
     }
 
     fn handle_deadlock(&mut self, dependence_cycle: &Vec<&DependencyNode>) -> ! {
+        if dependence_cycle.len() == 2 {
+            let lock_id = match dependence_cycle[0] {
+                DependencyNode::Lock(id) => id,
+                _ => {if let DependencyNode::Lock(id) = dependence_cycle[1] {
+                    id
+                } else {
+                    unreachable!()
+                }}
+            };
+            let lock = self.locks.get(lock_id).unwrap();
+            let mut locked_trace = lock.readers[0].1.clone();
+            locked_trace.resolve();
+            let mut reentrance_trace = lock.requests.get(&std::thread::current().id()).unwrap().1.clone();
+            reentrance_trace.resolve();
+            panic!("DEADLOCK DETECTED!\r\nA reentrance has been attempted, but `std::sync`'s locks are not reentrant. This results in a deadlock.\r\nLock taken at:\r\n{:?}\r\nReentrace at:\r\n{:?}", locked_trace, reentrance_trace)
+        }
         for lock_id in dependence_cycle.iter().filter_map(|val| match *val {
             DependencyNode::Lock(id) => Some(id),
             _ => None
@@ -230,4 +246,13 @@ fn no_deadlock_detection() {
     }});
     std::thread::sleep(std::time::Duration::from_millis(100));
     let _guard2 = mut2.lock();
+}
+
+#[test]
+#[should_panic]
+fn reentrance_detection() {
+    use crate::Mutex;
+    let mutex = Mutex::new(0);
+    let _guard1 = mutex.lock();
+    let _guard2 = mutex.lock();
 }
