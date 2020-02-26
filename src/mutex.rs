@@ -1,5 +1,6 @@
 use std::sync::{LockResult, PoisonError, TryLockError, TryLockResult};
 
+/// An instrumented version of `std::sync::Mutex`
 pub struct Mutex<T> {
     manager: std::sync::Arc<crate::lock_manager::LockManager>,
     key: usize,

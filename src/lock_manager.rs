@@ -48,6 +48,77 @@ impl<'l> std::ops::DerefMut for LockManagerWriteGuard<'l> {
      }
 }
 
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+enum DependencyNode {
+    Thread(ThreadId),
+    Lock(usize),
+}
+
+use std::thread::ThreadId;
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub(crate) enum RequestType {
+    Read,
+    Write,
+}
+
+pub struct LockRepresentation {
+    write_locked: bool,
+    pub(crate) readers: Vec<(ThreadId, Backtrace)>,
+    pub(crate) requests: Map<ThreadId, (RequestType, Backtrace)>,
+}
+
+impl LockRepresentation {
+    pub fn new() -> Self {
+        LockRepresentation {write_locked: false, readers: Vec::new(), requests: Map::new(), }
+    }
+
+    /// Returns `true` if write_lock succeeded
+    pub fn try_write_lock(&mut self) -> bool {
+        if self.readers.len() == 0 {
+            self.write_locked = true;
+            self.readers.push((std::thread::current().id(), Backtrace::new_unresolved()));
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn subscribe_write(&mut self) {
+        let id = std::thread::current().id();
+        if let Some((RequestType::Write, _)) = self.requests.get(&id) {
+            return
+        }
+        self.requests.insert(id, (RequestType::Write, Backtrace::new_unresolved()));
+    }
+
+    /// Returns `true` if read_lock succeeded
+    pub fn try_read_lock(&mut self) -> bool {
+        if self.write_locked{
+            false
+        } else {
+            self.readers.push((std::thread::current().id(), Backtrace::new_unresolved()));
+            true
+        }
+    }
+
+    pub fn subscribe_read(&mut self) {
+        let id = std::thread::current().id();
+        if let Some((RequestType::Read, _)) = self.requests.get(&id) {
+            return
+        }
+        self.requests.insert(id, (RequestType::Read, Backtrace::new_unresolved()));
+    }
+
+    pub fn unlock(&mut self) {
+        self.write_locked = false;
+        let id = std::thread::current().id();
+        if let Some(index) = self.readers.iter().position(|(i, _trace)| i == &id) {
+            self.readers.swap_remove(index);
+        }
+    }
+}
+
+
 pub struct LockManager {
     lock: AtomicCount,
     next_key: usize,
@@ -115,8 +186,19 @@ impl LockManager {
         }
     }
 
+    #[allow(unused_must_use)]
     fn handle_deadlock(&mut self, dependence_cycle: &Vec<&DependencyNode>) -> ! {
+        let (mut output, path): (Box<dyn std::io::Write>, _) = if let Some(path) = std::env::var_os("NO_DEADLOCKS") {
+            match std::fs::OpenOptions::new().append(true).create(true).open(&path) {
+                Ok(file) => (Box::new(file), path.to_str().unwrap().to_owned()),
+                Err(_) => (Box::new(std::io::stderr()), "stderr".to_owned())
+            }
+        } else {
+            (Box::new(std::io::stderr()), "stderr".to_owned())
+        };
+        writeln!(output, "=========== REPORT START ===========");
         if dependence_cycle.len() == 2 {
+            writeln!(output, "A reentrance has been attempted, but `std::sync`'s locks are not reentrant. This results in a deadlock. dependence cycle: {:?}", dependence_cycle);
             let lock_id = match dependence_cycle[0] {
                 DependencyNode::Lock(id) => id,
                 _ => {if let DependencyNode::Lock(id) = dependence_cycle[1] {
@@ -126,100 +208,47 @@ impl LockManager {
                 }}
             };
             let lock = self.locks.get(lock_id).unwrap();
-            let mut locked_trace = lock.readers[0].1.clone();
-            locked_trace.resolve();
-            let mut reentrance_trace = lock.requests.get(&std::thread::current().id()).unwrap().1.clone();
-            reentrance_trace.resolve();
-            panic!("DEADLOCK DETECTED!\r\nA reentrance has been attempted, but `std::sync`'s locks are not reentrant. This results in a deadlock.\r\nLock taken at:\r\n{:?}\r\nReentrace at:\r\n{:?}", locked_trace, reentrance_trace)
-        }
-        for lock_id in dependence_cycle.iter().filter_map(|val| match *val {
-            DependencyNode::Lock(id) => Some(id),
-            _ => None
-        }) {
-            let representation = self.locks.get(lock_id).unwrap();
-            let mut trace = representation.trace.clone();
-            trace.resolve();
-            eprintln!("Lock {}, taken at: {:?}", lock_id, trace);
-            eprintln!("\t{}-locked by threads {:?}", if representation.write_locked {"write"} else {"read"}, representation.readers.iter().map(|(id, _trace)| id).collect::<Vec<_>>());
-        }
-        panic!("Deadlock detected! Cycle: {:?}", dependence_cycle)
-    }
-}
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-enum DependencyNode {
-    Thread(ThreadId),
-    Lock(usize),
-}
-
-use std::thread::ThreadId;
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub(crate) enum RequestType {
-    Read,
-    Write,
-}
-
-pub struct LockRepresentation {
-    write_locked: bool,
-    pub(crate) readers: Vec<(ThreadId, Backtrace)>,
-    pub(crate) requests: Map<ThreadId, (RequestType, Backtrace)>,
-    pub(crate) trace: Backtrace,
-}
-
-impl LockRepresentation {
-    pub fn new() -> Self {
-        LockRepresentation {write_locked: false, readers: Vec::new(), requests: Map::new(), trace: Backtrace::new_unresolved()}
-    }
-
-    /// Returns `true` if write_lock succeeded
-    pub fn try_write_lock(&mut self) -> bool {
-        if self.readers.len() == 0 {
-            self.write_locked = true;
-            self.readers.push((std::thread::current().id(), Backtrace::new_unresolved()));
-            true
+            let locked_trace = resolve_and_trim(&lock.readers[0].1);
+            let reentrance_trace = resolve_and_trim(&lock.requests.get(&std::thread::current().id()).unwrap().1);
+            writeln!(output, "Lock taken at:\r\n{:?}\r\nReentrace at:\r\n{:?}", locked_trace, reentrance_trace);
         } else {
-            false
+            writeln!(output, "A deadlock has been detected, here's the dependence cycle: {:?}", dependence_cycle);
+            for lock_id in dependence_cycle.iter().filter_map(|val| match *val {
+                DependencyNode::Lock(id) => Some(id),
+                _ => None
+            }) {
+                let representation = self.locks.get(lock_id).unwrap();
+                writeln!(output, "LOCK {}:", lock_id);
+                writeln!(output, "BLOCKING:");
+                for (thread_id, (request, trace)) in representation.requests.iter() {
+                    writeln!(output, " THREAD {:?} requesting {} rights at:", thread_id, match request {
+                        RequestType::Read => "read",
+                        RequestType::Write => "write",
+                    });
+                    writeln!(output, "{:?}", resolve_and_trim(trace));
+                }
+                writeln!(output, "BLOCKED BY:");
+                for (thread_id, trace) in representation.readers.iter() {
+                    writeln!(output, " THREAD {:?} blocked at:", thread_id);
+                    writeln!(output, "{:?}", resolve_and_trim(trace));
+                }
+            }
         }
+        writeln!(output, "=========== REPORT END ===========");
+        writeln!(output);
+        panic!("DEADLOCK DETECTED! See {} for details", path);
     }
+}
 
-    pub fn subscribe_write(&mut self) {
-        let id = std::thread::current().id();
-        if let Some((RequestType::Write, _)) = self.requests.get(&id) {
-            return
-        }
-        self.requests.insert(id, (RequestType::Write, Backtrace::new_unresolved()));
-    }
-
-    /// Returns `true` if read_lock succeeded
-    pub fn try_read_lock(&mut self) -> bool {
-        if self.write_locked{
-            false
-        } else {
-            self.readers.push((std::thread::current().id(), Backtrace::new_unresolved()));
-            true
-        }
-    }
-
-    pub fn subscribe_read(&mut self) {
-        let id = std::thread::current().id();
-        if let Some((RequestType::Read, _)) = self.requests.get(&id) {
-            return
-        }
-        self.requests.insert(id, (RequestType::Read, Backtrace::new_unresolved()));
-    }
-
-    pub fn unlock(&mut self) {
-        self.write_locked = false;
-        let id = std::thread::current().id();
-        if let Some(index) = self.readers.iter().position(|(i, _trace)| i == &id) {
-            self.readers.swap_remove(index);
-        }
-    }
+fn resolve_and_trim(trace: &Backtrace) -> Backtrace {
+    let mut resolved: Backtrace = trace.frames().iter().skip(6).cloned().collect::<Vec<_>>().into();
+    resolved.resolve();
+    resolved
 }
 
 #[test]
 #[should_panic]
-fn deadlock_detection() {
+fn with_deadlock() {
     use std::sync::Arc;
     use crate::Mutex;
     let mut1 = Arc::new(Mutex::new(0));
@@ -238,7 +267,7 @@ fn deadlock_detection() {
 }
 
 #[test]
-fn no_deadlock_detection() {
+fn without_deadlock() {
     use std::sync::Arc;
     use crate::Mutex;
     let mut1 = Arc::new(Mutex::new(0));

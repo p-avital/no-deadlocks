@@ -1,8 +1,11 @@
 # `no_deadlocks`: a Runtime Deadlock Debugger
 Rust is awesome, but the current `std::sync` API doesn't contain deadlock-safe functions to avoid deadlocks. This crate aims to provide an identical API for ease of switch, but instead of Rust's usual locks, you get anti-deadlock ones.
 
+By default, debug information is writen to `stderr` when a deadlock is found. If you want `no_deadlock` reports to be written to a specific file, you can specify its path in the `NO_DEADLOCKS` environment variable.
+
 ## Why should I use this crate?
-It's rather easy to use, since the API is the same as Rust's `std::sync`, but you get self-debugging locks, hurray! You may use it preventively while creating your program, or you may replace your locks with these whenever you suspect a deadlock has happened and you want to inquire.
+It's rather easy to use, since the API is the same as Rust's `std::sync`, but you get self-debugging locks, hurray!  
+You may use it preventively while creating your program, or you may replace your locks with these whenever you suspect a deadlock has happened and you want to inquire.
 
 ## Why should I keep using Rust's `std::sync` then?
 Because the Law of Equivalent Exchange is very specific: by getting these awesome self-debugging features, you lose some performance: the locks I provide you WILL be slower (much slower, in fact), as they all report to the same manager in order to be debuggable.
@@ -26,11 +29,10 @@ While this crate could handle reentrance, `std::sync`'s locks don't. Reentrance 
 
 `no_deadlock` detects reentrance deadlocks the same way it does for all other deadlocks, but will log it slightly differently since it's easily distinguishable (a reentrance deadlock is modeled by a 2 node cycle, whereas any other deadlock would require more nodes to be modeled).
 
+## Why do you use `vector-map` by default?
+Because in most programs, there are actually rather few locks. `vector-map`'s `VecMap` was built as a vector of tuples equivalent to `std::collections::HashMap`, which is more efficient for small collections.
+
+The `use_vecmap` feature (on by default) switches between `VecMap` and `HashMap`. If your program uses many locks (about a hundred), feel free to toggle it off.
+
 ## What's next for this crate?
-For now, I want to find the nicest way I can to relay the Deadlock Error to the user. I opted for `panic` because deadlocks are usually non-recoverable states anyway, and mostly because I wanted to keep `std::sync`'s signatures as much as possible, but I'm open to suggestions.
-
-I also need to get the debugging experience to be nice. As of writing this README, the infrastructure to give great traces on the deadlocks is here, but the formatting is very lacking.
-
-Currently, all of the information is immedately written to `stderr` upon finding a deadlock. Rather soon, I'm thinking of adding an environment variable to allow you to set a file for all of this information to be dumped into.
-
-As for future progress, feel free to write up an issue to let me know what you'd like :)
+I'm satisfied with this crate's current state (read: "I don't have a plan"), but feel free to write up an issue to let me know what you'd like :)

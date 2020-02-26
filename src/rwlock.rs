@@ -1,5 +1,6 @@
 use std::sync::{LockResult, TryLockResult, TryLockError, PoisonError};
 
+/// An instrumented version of `std::sync::RwLock`
 pub struct RwLock<T>{
     inner: T,
     key: usize,

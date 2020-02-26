@@ -1,6 +1,6 @@
 [package]
 name = "no_deadlocks"
-version = "0.1.0"
+version = "1.0.0"
 keywords = ["deadlock", "Mutex", "RwLock", "locks"]
 authors = ["Pierre Avital <pierre.avital@me.com>"]
 edition = "2018"
