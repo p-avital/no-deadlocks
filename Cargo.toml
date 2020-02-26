@@ -7,6 +7,7 @@ edition = "2018"
 license = "MPL-2.0"
 readme = "README.md"
 description = "A Runtime Deadlock Debugger"
+repository = "https://github.com/p-avital/no-deadlocks"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
