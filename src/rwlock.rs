@@ -155,3 +155,6 @@ impl<'l, T> Drop for RwLockWriteGuard<'l, T> {
         }
     }
 }
+
+unsafe impl<T: Send> Send for RwLock<T> {}
+unsafe impl<T: Send> Sync for RwLock<T> {}
