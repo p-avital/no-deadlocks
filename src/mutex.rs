@@ -48,9 +48,7 @@ impl<T> Mutex<T> {
                 inner: unsafe { &mut *(self as *const _ as *mut _) },
             };
             if self.is_poisoned() {
-                Err(TryLockError::Poisoned(
-                    PoisonError::new(returned_guard),
-                ))
+                Err(TryLockError::Poisoned(PoisonError::new(returned_guard)))
             } else {
                 Ok(returned_guard)
             }
@@ -68,11 +66,9 @@ impl<T> Mutex<T> {
                     inner: unsafe { &mut *(self as *const _ as *mut _) },
                 };
                 if self.is_poisoned() {
-                    return Err(
-                    PoisonError::new(returned_guard),
-                    )
+                    return Err(PoisonError::new(returned_guard));
                 } else {
-                    return Ok(returned_guard)
+                    return Ok(returned_guard);
                 }
             } else {
                 representation.subscribe_write();
@@ -106,3 +102,5 @@ impl<'l, T> Drop for MutexGuard<'l, T> {
         }
     }
 }
+unsafe impl<T: Send> Send for Mutex<T> {}
+unsafe impl<T: Send> Sync for Mutex<T> {}
