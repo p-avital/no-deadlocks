@@ -127,7 +127,7 @@ pub struct LockManager {
 
 impl LockManager {
     fn new() -> Self {
-        LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Default::default()}
+        LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Map::new()}
     }
 
     pub fn get_global_manager() -> Arc<Self> {

@@ -1,6 +1,6 @@
 [package]
 name = "no_deadlocks"
-version = "1.1.0"
+version = "1.1.1"
 keywords = ["deadlock", "Mutex", "RwLock", "locks"]
 authors = ["Pierre Avital <pierre.avital@me.com>"]
 edition = "2018"
@@ -12,7 +12,7 @@ repository = "https://github.com/p-avital/no-deadlocks"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vector-map = {version="0.5", optional=true}
+vector-map = {version="1.0", optional=true}
 backtrace = "0.3"
 
 [features]
