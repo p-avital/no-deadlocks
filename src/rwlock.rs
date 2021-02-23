@@ -1,11 +1,12 @@
 use std::sync::{LockResult, TryLockResult, TryLockError, PoisonError};
+use std::cell::UnsafeCell;
 
 /// An instrumented version of `std::sync::RwLock`
-pub struct RwLock<T>{
-    inner: T,
+pub struct RwLock<T: ?Sized>{
     key: usize,
     poisoned: bool,
     manager: std::sync::Arc<crate::lock_manager::LockManager>,
+    inner: UnsafeCell<T>,
 }
 
 impl<T> RwLock<T> {
@@ -13,7 +14,7 @@ impl<T> RwLock<T> {
         let manager = crate::lock_manager::LockManager::get_global_manager();
         let key = manager.create_lock();
         RwLock {
-            inner,
+            inner: UnsafeCell::new(inner),
             poisoned: false,
             manager,
             key,
@@ -21,11 +22,13 @@ impl<T> RwLock<T> {
     }
 
     pub fn into_inner(self) -> T {
-        self.inner
+        self.inner.into_inner()
     }
+}
 
+impl<T: ?Sized> RwLock<T> {
     pub fn get_mut(&mut self) -> &mut T {
-        &mut self.inner
+        self.inner.get_mut()
     }
 
     pub fn is_poisoned(&self) -> bool {
@@ -113,40 +116,40 @@ impl<T> RwLock<T> {
     }
 }
 
-pub struct RwLockReadGuard<'l, T> {
+pub struct RwLockReadGuard<'l, T: ?Sized> {
     inner: &'l RwLock<T>
 }
-impl<'l, T> std::ops::Deref for RwLockReadGuard<'l, T> {
+impl<'l, T: ?Sized> std::ops::Deref for RwLockReadGuard<'l, T> {
     type Target = T;
     fn deref(&self) -> &<Self as std::ops::Deref>::Target {
-        &self.inner.inner
+        unsafe{ &(*self.inner.inner.get()) }
     }
 }
-impl<'l, T> Drop for RwLockReadGuard<'l, T> {
+impl<'l, T: ?Sized> Drop for RwLockReadGuard<'l, T> {
     fn drop(&mut self) {
         let mut guard = self.inner.manager.write_lock();
         guard.locks.get_mut(&self.inner.key).unwrap().unlock();
         if std::thread::panicking() {
-            unsafe {(*(&self.inner as *const _ as *mut RwLock<T>)).poisoned = true};
+            unsafe {(*(self.inner as *const _ as *mut RwLock<T>)).poisoned = true};
         }
     }
 }
-pub struct RwLockWriteGuard<'l, T> {
+pub struct RwLockWriteGuard<'l, T: ?Sized> {
     inner: &'l mut RwLock<T>
 }
 
-impl<'l, T> std::ops::Deref for RwLockWriteGuard<'l, T> {
+impl<'l, T: ?Sized> std::ops::Deref for RwLockWriteGuard<'l, T> {
     type Target = T;
     fn deref(&self) -> &<Self as std::ops::Deref>::Target {
-        &self.inner.inner
+        unsafe{ &(*self.inner.inner.get()) }
     }
 }
-impl<'l, T> std::ops::DerefMut for RwLockWriteGuard<'l, T> {
+impl<'l, T: ?Sized> std::ops::DerefMut for RwLockWriteGuard<'l, T> {
     fn deref_mut(&mut self) -> &mut <Self as std::ops::Deref>::Target {
-        &mut self.inner.inner
+        self.inner.inner.get_mut()
     }
 }
-impl<'l, T> Drop for RwLockWriteGuard<'l, T> {
+impl<'l, T: ?Sized> Drop for RwLockWriteGuard<'l, T> {
     fn drop(&mut self) {
         let mut guard = self.inner.manager.write_lock();
         guard.locks.get_mut(&self.inner.key).unwrap().unlock();
@@ -156,5 +159,5 @@ impl<'l, T> Drop for RwLockWriteGuard<'l, T> {
     }
 }
 
-unsafe impl<T: Send> Send for RwLock<T> {}
-unsafe impl<T: Send> Sync for RwLock<T> {}
+unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
+unsafe impl<T: ?Sized + Send> Sync for RwLock<T> {}
