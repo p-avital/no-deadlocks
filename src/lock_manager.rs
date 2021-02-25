@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::AtomicI32 as AtomicCount;
+use std::sync::atomic::AtomicPtr;
 
 use backtrace::Backtrace;
 
 use crate::Map;
 
-static mut GLOBAL_MANAGER: Option<Arc<LockManager>> = None;
+static GLOBAL_MANAGER: AtomicPtr<Arc<LockManager>> = AtomicPtr::new(std::ptr::null_mut() as *mut Arc<LockManager>);
 
 pub struct LockManagerReadGuard<'l> {
     inner: &'l LockManager
@@ -77,10 +78,15 @@ impl LockRepresentation {
         if self.readers.len() == 0 {
             self.write_locked = true;
             self.readers.push((std::thread::current().id(), Backtrace::new_unresolved()));
+            self.unsubscribe();
             true
         } else {
             false
         }
+    }
+
+    pub fn unsubscribe(&mut self) {
+        self.requests.remove(&std::thread::current().id());
     }
 
     pub fn subscribe_write(&mut self) {
@@ -97,6 +103,7 @@ impl LockRepresentation {
             false
         } else {
             self.readers.push((std::thread::current().id(), Backtrace::new_unresolved()));
+            self.unsubscribe();
             true
         }
     }
@@ -131,14 +138,21 @@ impl LockManager {
     }
 
     pub fn get_global_manager() -> Arc<Self> {
-        if let Some(manager) = unsafe {&GLOBAL_MANAGER} {
-            manager.clone()
-        } else {
-            let manager = Arc::new(Self::new());
-            unsafe {
-                GLOBAL_MANAGER = Some(manager.clone())
-            };
-            manager
+        let manager = GLOBAL_MANAGER.load(Ordering::Relaxed);
+        if !manager.is_null() {
+            return unsafe {(*manager).clone()}
+        }
+        let new_manager = Box::into_raw(Box::new(Arc::new(LockManager::new())));
+        match GLOBAL_MANAGER.compare_exchange(manager, new_manager, Ordering::Relaxed, Ordering::Relaxed) {
+            Err(manager) => {
+                unsafe {
+                    Box::from_raw(new_manager);
+                    (*manager).clone()
+                }
+            }
+             Ok(_) => {
+                unsafe {(*new_manager).clone()}
+             }
         }
     }
 
@@ -153,7 +167,7 @@ impl LockManager {
     pub(crate) fn read_lock(&self) -> LockManagerReadGuard {
         let mut state = self.lock.load(Ordering::Relaxed);
         loop {
-            if state == 0 {
+            if state >= 0 {
                 let new_state = self.lock.compare_and_swap(state, state + 1, Ordering::Relaxed);
                 if new_state == state {break;} else {state = new_state}
             } else {

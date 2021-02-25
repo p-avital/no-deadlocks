@@ -28,7 +28,7 @@ impl<T> RwLock<T> {
 
 impl<T: ?Sized> RwLock<T> {
     pub fn get_mut(&mut self) -> &mut T {
-        self.inner.get_mut()
+        unsafe {&mut *self.inner.get()}
     }
 
     pub fn is_poisoned(&self) -> bool {
@@ -146,7 +146,7 @@ impl<'l, T: ?Sized> std::ops::Deref for RwLockWriteGuard<'l, T> {
 }
 impl<'l, T: ?Sized> std::ops::DerefMut for RwLockWriteGuard<'l, T> {
     fn deref_mut(&mut self) -> &mut <Self as std::ops::Deref>::Target {
-        self.inner.inner.get_mut()
+        unsafe {&mut *self.inner.inner.get()}
     }
 }
 impl<'l, T: ?Sized> Drop for RwLockWriteGuard<'l, T> {

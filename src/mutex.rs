@@ -1,11 +1,12 @@
 use std::sync::{LockResult, PoisonError, TryLockError, TryLockResult};
+use std::cell::UnsafeCell;
 
 /// An instrumented version of `std::sync::Mutex`
-pub struct Mutex<T> {
-    manager: std::sync::Arc<crate::lock_manager::LockManager>,
+pub struct Mutex<T: ?Sized> {
     key: usize,
     poisoned: bool,
-    inner: T,
+    manager: std::sync::Arc<crate::lock_manager::LockManager>,
+    inner: UnsafeCell<T>,
 }
 
 impl<T> Mutex<T> {
@@ -13,26 +14,29 @@ impl<T> Mutex<T> {
         let manager = crate::lock_manager::LockManager::get_global_manager();
         let key = manager.create_lock();
         Mutex {
-            inner,
+            inner: UnsafeCell::new(inner),
             poisoned: false,
             manager,
             key,
         }
     }
 
-    pub fn get_mut(&mut self) -> LockResult<&mut T> {
-        if self.poisoned {
-            Err(PoisonError::new(&mut self.inner))
-        } else {
-            Ok(&mut self.inner)
-        }
-    }
-
     pub fn into_inner(self) -> LockResult<T> {
         if self.poisoned {
-            Err(PoisonError::new(self.inner))
+            Err(PoisonError::new(self.inner.into_inner()))
         } else {
-            Ok(self.inner)
+            Ok(self.inner.into_inner())
+        }
+    }
+}
+
+impl<T: ?Sized> Mutex<T> {
+    pub fn get_mut(&mut self) -> LockResult<&mut T> {
+        let reference = unsafe {&mut *self.inner.get()};
+        if self.poisoned {
+            Err(PoisonError::new(reference))
+        } else {
+            Ok(reference)
         }
     }
 
@@ -79,21 +83,21 @@ impl<T> Mutex<T> {
     }
 }
 
-pub struct MutexGuard<'l, T> {
+pub struct MutexGuard<'l, T: ?Sized> {
     inner: &'l mut Mutex<T>,
 }
 impl<'l, T> std::ops::Deref for MutexGuard<'l, T> {
     type Target = T;
     fn deref(&self) -> &<Self as std::ops::Deref>::Target {
-        &self.inner.inner
+        unsafe {&*self.inner.inner.get()}
     }
 }
 impl<'l, T> std::ops::DerefMut for MutexGuard<'l, T> {
     fn deref_mut(&mut self) -> &mut <Self as std::ops::Deref>::Target {
-        &mut self.inner.inner
+        unsafe {&mut *self.inner.inner.get()}
     }
 }
-impl<'l, T> Drop for MutexGuard<'l, T> {
+impl<'l, T: ?Sized> Drop for MutexGuard<'l, T> {
     fn drop(&mut self) {
         let mut guard = self.inner.manager.write_lock();
         guard.locks.get_mut(&self.inner.key).unwrap().unlock();

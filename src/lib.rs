@@ -26,3 +26,22 @@ pub(crate) type Set<T> = std::collections::HashMap<T, ()>;
 pub(crate) type Map<K, V> = vector_map::VecMap<K, V>;
 #[cfg(not(feature = "use_vecmap"))]
 pub(crate) type Map<K, V> = std::collections::HashMap<K, V>;
+
+#[test]
+fn reported_issue_5() {
+    use std::sync::Arc;
+    use crate::Mutex;
+    let mut childs = vec![];
+    let m = Arc::new(Mutex::new(0));
+    for _ in 1..=10 {
+        let clone_m = m.clone();
+        childs.push(std::thread::spawn(move||{
+            let mut m = clone_m.lock().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            *m = 1;
+        }))
+    }
+    for c in childs.into_iter() {
+        c.join();
+    }
+}
