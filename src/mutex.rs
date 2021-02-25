@@ -1,5 +1,6 @@
 use std::sync::{LockResult, PoisonError, TryLockError, TryLockResult};
 use std::cell::UnsafeCell;
+use std::time::{Instant, Duration};
 
 /// An instrumented version of `std::sync::Mutex`
 pub struct Mutex<T: ?Sized> {
@@ -62,6 +63,9 @@ impl<T: ?Sized> Mutex<T> {
     }
 
     pub fn lock(&self) -> LockResult<MutexGuard<T>> {
+        let timeout = Duration::from_secs(1);
+        let start = Instant::now();
+
         loop {
             let mut guard = self.manager.write_lock();
             let representation = guard.locks.get_mut(&self.key).unwrap();
@@ -74,7 +78,7 @@ impl<T: ?Sized> Mutex<T> {
                 } else {
                     return Ok(returned_guard);
                 }
-            } else {
+            } else if Instant::now().duration_since(start) > timeout {
                 representation.subscribe_write();
                 guard.analyse();
                 std::thread::yield_now();
