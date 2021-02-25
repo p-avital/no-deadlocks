@@ -1,5 +1,6 @@
 use std::sync::{LockResult, TryLockResult, TryLockError, PoisonError};
 use std::cell::UnsafeCell;
+use std::time::{Instant, Duration};
 
 /// An instrumented version of `std::sync::RwLock`
 pub struct RwLock<T: ?Sized>{
@@ -74,6 +75,9 @@ impl<T: ?Sized> RwLock<T> {
     }
 
     pub fn read(&self) -> LockResult<RwLockReadGuard<T>> {
+        let timeout = Duration::from_secs(1);
+        let start = Instant::now();
+
         loop {
             let mut guard = self.manager.write_lock();
             let representation = guard.locks.get_mut(&self.key).unwrap();
@@ -86,7 +90,7 @@ impl<T: ?Sized> RwLock<T> {
                 } else {
                     return Ok(returned_guard)
                 }
-            } else {
+            } else if Instant::now().duration_since(start) > timeout {
                 representation.subscribe_read();
                 guard.analyse();
                 std::thread::yield_now();
@@ -95,6 +99,9 @@ impl<T: ?Sized> RwLock<T> {
     }
 
     pub fn write(&self) -> LockResult<RwLockWriteGuard<T>> {
+        let timeout = Duration::from_secs(1);
+        let start = Instant::now();
+
         loop {
             let mut guard = self.manager.write_lock();
             let representation = guard.locks.get_mut(&self.key).unwrap();
@@ -107,7 +114,7 @@ impl<T: ?Sized> RwLock<T> {
                 } else {
                     return Ok(returned_guard)
                 }
-            } else {
+            } else if Instant::now().duration_since(start) > timeout {
                 representation.subscribe_write();
                 guard.analyse();
                 std::thread::yield_now();
