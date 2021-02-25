@@ -69,6 +69,7 @@ impl<T: ?Sized> Mutex<T> {
         loop {
             let mut guard = self.manager.write_lock();
             let representation = guard.locks.get_mut(&self.key).unwrap();
+
             if representation.try_write_lock() {
                 let returned_guard = MutexGuard {
                     inner: unsafe { &mut *(self as *const _ as *mut _) },
@@ -81,8 +82,9 @@ impl<T: ?Sized> Mutex<T> {
             } else if Instant::now().duration_since(start) > timeout {
                 representation.subscribe_write();
                 guard.analyse();
-                std::thread::yield_now();
             }
+
+            std::thread::yield_now();
         }
     }
 }
