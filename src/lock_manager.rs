@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::AtomicI32 as AtomicCount;
 use std::sync::atomic::AtomicPtr;
+use std::thread::ThreadId;
 
 use backtrace::Backtrace;
 
@@ -55,7 +56,6 @@ enum DependencyNode {
     Lock(usize),
 }
 
-use std::thread::ThreadId;
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub(crate) enum RequestType {
     Read,
@@ -137,7 +137,7 @@ impl LockManager {
     pub fn new() -> Self {
         LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Map::new(), analysis_timeout: std::time::Duration::from_secs(1)}
     }
-    
+
     pub fn with_analysis_timeout(analysis_timeout: std::time::Duration) -> Self {
         LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Map::new(), analysis_timeout}
     }
@@ -168,8 +168,14 @@ impl LockManager {
     pub fn create_lock(&self) -> usize {
         let mut guard = self.write_lock();
         let key = guard.next_key;
-        guard.next_key += 1;guard.locks.insert(key, LockRepresentation::new());
+        guard.next_key += 1;
+        guard.locks.insert(key, LockRepresentation::new());
         key
+    }
+
+    pub fn remove_lock(&self, key: &usize) {
+        let mut guard = self.write_lock();
+        guard.locks.remove(key);
     }
 
     #[allow(dead_code)]
@@ -205,12 +211,16 @@ impl LockManager {
             }
         }
         if let Some(result) = graph.find_loop() {
-            self.handle_deadlock(&result)
+            self.handle_deadlock(&result);
         }
     }
 
     #[allow(unused_must_use)]
-    fn handle_deadlock(&mut self, dependence_cycle: &Vec<&DependencyNode>) -> ! {
+    fn handle_deadlock(&mut self, dependence_cycle: &Vec<&DependencyNode>) {
+        let this_thread = DependencyNode::Thread(std::thread::current().id());
+        if !dependence_cycle.iter().any(|node| *node == &this_thread) {
+            return;
+        }
         let (mut output, path): (Box<dyn std::io::Write>, _) = if let Some(path) = std::env::var_os("NO_DEADLOCKS") {
             match std::fs::OpenOptions::new().append(true).create(true).open(&path) {
                 Ok(file) => (Box::new(file), path.to_str().unwrap().to_owned()),
@@ -277,16 +287,16 @@ fn with_deadlock() {
     let mut1 = Arc::new(Mutex::new(0));
     let mut2 = Arc::new(Mutex::new(0));
     let _guard1 = mut1.lock();
-    std::thread::spawn({
+    let th = std::thread::spawn({
         let mut1 = mut1.clone();
         let mut2 = mut2.clone();
         move ||{
             let _guard2 = mut2.lock();
             let _guard1 = mut1.lock();
-            std::thread::sleep(std::time::Duration::from_millis(200));
     }});
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    std::thread::sleep(std::time::Duration::from_millis(200));
     let _guard2 = mut2.lock();
+    th.join().unwrap();
 }
 
 #[test]
@@ -295,8 +305,8 @@ fn without_deadlock() {
     use crate::Mutex;
     let mut1 = Arc::new(Mutex::new(0));
     let mut2 = Arc::new(Mutex::new(0));
-    let _guard1 = mut1.lock();
-    std::thread::spawn({
+    let guard1 = mut1.lock();
+    let th = std::thread::spawn({
         let mut1 = mut1.clone();
         let mut2 = mut2.clone();
         move ||{
@@ -305,7 +315,9 @@ fn without_deadlock() {
             std::thread::sleep(std::time::Duration::from_millis(200));
     }});
     std::thread::sleep(std::time::Duration::from_millis(100));
-    let _guard2 = mut2.lock();
+    let guard2 = mut2.lock();
+    std::mem::drop((guard1, guard2));
+    th.join().unwrap();
 }
 
 #[test]

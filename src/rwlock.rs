@@ -32,8 +32,14 @@ impl<T> RwLock<T> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.inner.into_inner()
+    // pub fn into_inner(self) -> T {
+    //     self.inner.into_inner()
+    // }
+}
+
+impl<T: ?Sized> Drop for RwLock<T> {
+    fn drop(&mut self) {
+        self.manager.remove_lock(&self.key)
     }
 }
 

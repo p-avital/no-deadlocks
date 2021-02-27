@@ -32,12 +32,18 @@ impl<T> Mutex<T> {
         }
     }
 
-    pub fn into_inner(self) -> LockResult<T> {
-        if self.poisoned {
-            Err(PoisonError::new(self.inner.into_inner()))
-        } else {
-            Ok(self.inner.into_inner())
-        }
+    // pub fn into_inner(self) -> LockResult<T> {
+    //     if self.poisoned {
+    //         Err(PoisonError::new(self.inner.into_inner()))
+    //     } else {
+    //         Ok(self.inner.into_inner())
+    //     }
+    // }
+}
+
+impl<T: ?Sized> Drop for Mutex<T> {
+    fn drop(&mut self) {
+        self.manager.remove_lock(&self.key)
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::{Map, Set};
 
+#[derive(Debug)]
 pub struct Graph<NodeType: std::cmp::PartialEq> {
     nodes: Map<NodeType, Set<NodeType>>
 }
