@@ -129,12 +129,21 @@ impl LockRepresentation {
 pub struct LockManager {
     lock: AtomicCount,
     next_key: usize,
+    analysis_timeout: std::time::Duration,
     pub(crate) locks: Map<usize, LockRepresentation>
 }
 
 impl LockManager {
-    fn new() -> Self {
-        LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Map::new()}
+    pub fn new() -> Self {
+        LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Map::new(), analysis_timeout: std::time::Duration::from_secs(1)}
+    }
+    
+    pub fn with_analysis_timeout(analysis_timeout: std::time::Duration) -> Self {
+        LockManager {lock: AtomicCount::new(0), next_key: 0, locks: Map::new(), analysis_timeout}
+    }
+
+    pub fn analysis_timeout(&self) -> std::time::Duration {
+        self.analysis_timeout
     }
 
     pub fn get_global_manager() -> Arc<Self> {

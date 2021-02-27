@@ -1,6 +1,6 @@
 use std::sync::{LockResult, TryLockResult, TryLockError, PoisonError};
 use std::cell::UnsafeCell;
-use std::time::{Instant, Duration};
+use std::time::Instant;
 
 /// An instrumented version of `std::sync::RwLock`
 pub struct RwLock<T: ?Sized>{
@@ -13,6 +13,16 @@ pub struct RwLock<T: ?Sized>{
 impl<T> RwLock<T> {
     pub fn new(inner: T) -> Self {
         let manager = crate::lock_manager::LockManager::get_global_manager();
+        let key = manager.create_lock();
+        RwLock {
+            inner: UnsafeCell::new(inner),
+            poisoned: false,
+            manager,
+            key,
+        }
+    }
+
+    pub fn with_manager(manager: std::sync::Arc<crate::lock_manager::LockManager>, inner: T) -> Self {
         let key = manager.create_lock();
         RwLock {
             inner: UnsafeCell::new(inner),
@@ -75,7 +85,7 @@ impl<T: ?Sized> RwLock<T> {
     }
 
     pub fn read(&self) -> LockResult<RwLockReadGuard<T>> {
-        let timeout = Duration::from_secs(1);
+        let timeout = self.manager.analysis_timeout();
         let start = Instant::now();
 
         loop {
@@ -101,7 +111,7 @@ impl<T: ?Sized> RwLock<T> {
     }
 
     pub fn write(&self) -> LockResult<RwLockWriteGuard<T>> {
-        let timeout = Duration::from_secs(1);
+        let timeout = self.manager.analysis_timeout();
         let start = Instant::now();
 
         loop {

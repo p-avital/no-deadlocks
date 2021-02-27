@@ -1,4 +1,4 @@
-mod lock_manager;
+pub mod lock_manager;
 mod mutex;
 mod rwlock;
 mod graphs;

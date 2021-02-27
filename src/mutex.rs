@@ -1,6 +1,6 @@
 use std::sync::{LockResult, PoisonError, TryLockError, TryLockResult};
 use std::cell::UnsafeCell;
-use std::time::{Instant, Duration};
+use std::time::Instant;
 
 /// An instrumented version of `std::sync::Mutex`
 pub struct Mutex<T: ?Sized> {
@@ -13,6 +13,16 @@ pub struct Mutex<T: ?Sized> {
 impl<T> Mutex<T> {
     pub fn new(inner: T) -> Self {
         let manager = crate::lock_manager::LockManager::get_global_manager();
+        let key = manager.create_lock();
+        Mutex {
+            inner: UnsafeCell::new(inner),
+            poisoned: false,
+            manager,
+            key,
+        }
+    }
+
+    pub fn with_manager(manager: std::sync::Arc<crate::lock_manager::LockManager>, inner: T) -> Self {
         let key = manager.create_lock();
         Mutex {
             inner: UnsafeCell::new(inner),
@@ -63,7 +73,7 @@ impl<T: ?Sized> Mutex<T> {
     }
 
     pub fn lock(&self) -> LockResult<MutexGuard<T>> {
-        let timeout = Duration::from_secs(1);
+        let timeout = self.manager.analysis_timeout();
         let start = Instant::now();
 
         loop {
