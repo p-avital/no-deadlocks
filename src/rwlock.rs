@@ -1,11 +1,12 @@
-use std::sync::{LockResult, TryLockResult, TryLockError, PoisonError};
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LockResult, PoisonError, TryLockError, TryLockResult};
 use std::time::Instant;
 
 /// An instrumented version of `std::sync::RwLock`
-pub struct RwLock<T: ?Sized>{
+pub struct RwLock<T: ?Sized> {
     key: usize,
-    poisoned: bool,
+    poisoned: AtomicBool,
     manager: std::sync::Arc<crate::lock_manager::LockManager>,
     inner: UnsafeCell<T>,
 }
@@ -16,17 +17,20 @@ impl<T> RwLock<T> {
         let key = manager.create_lock();
         RwLock {
             inner: UnsafeCell::new(inner),
-            poisoned: false,
+            poisoned: AtomicBool::new(false),
             manager,
             key,
         }
     }
 
-    pub fn with_manager(manager: std::sync::Arc<crate::lock_manager::LockManager>, inner: T) -> Self {
+    pub fn with_manager(
+        manager: std::sync::Arc<crate::lock_manager::LockManager>,
+        inner: T,
+    ) -> Self {
         let key = manager.create_lock();
         RwLock {
             inner: UnsafeCell::new(inner),
-            poisoned: false,
+            poisoned: AtomicBool::new(false),
             manager,
             key,
         }
@@ -45,24 +49,20 @@ impl<T: ?Sized> Drop for RwLock<T> {
 
 impl<T: ?Sized> RwLock<T> {
     pub fn get_mut(&mut self) -> &mut T {
-        unsafe {&mut *self.inner.get()}
+        unsafe { &mut *self.inner.get() }
     }
 
     pub fn is_poisoned(&self) -> bool {
-        self.poisoned
+        self.poisoned.load(Ordering::Relaxed)
     }
 
     pub fn try_read(&self) -> TryLockResult<RwLockReadGuard<T>> {
         let mut guard = self.manager.write_lock();
         let representation = guard.locks.get_mut(&self.key).unwrap();
         if representation.try_read_lock() {
-            let returned_guard = RwLockReadGuard {
-                inner: &self,
-            };
+            let returned_guard = RwLockReadGuard { inner: self };
             if self.is_poisoned() {
-                Err(TryLockError::Poisoned(
-                    PoisonError::new(returned_guard),
-                ))
+                Err(TryLockError::Poisoned(PoisonError::new(returned_guard)))
             } else {
                 Ok(returned_guard)
             }
@@ -75,13 +75,9 @@ impl<T: ?Sized> RwLock<T> {
         let mut guard = self.manager.write_lock();
         let representation = guard.locks.get_mut(&self.key).unwrap();
         if representation.try_write_lock() {
-            let returned_guard = RwLockWriteGuard {
-                inner: unsafe { &mut *(self as *const _ as *mut _) },
-            };
+            let returned_guard = RwLockWriteGuard { inner: self };
             if self.is_poisoned() {
-                Err(TryLockError::Poisoned(
-                    PoisonError::new(returned_guard),
-                ))
+                Err(TryLockError::Poisoned(PoisonError::new(returned_guard)))
             } else {
                 Ok(returned_guard)
             }
@@ -99,13 +95,11 @@ impl<T: ?Sized> RwLock<T> {
             let representation = guard.locks.get_mut(&self.key).unwrap();
 
             if representation.try_read_lock() {
-                let returned_guard = RwLockReadGuard {
-                    inner: &self,
-                };
+                let returned_guard = RwLockReadGuard { inner: self };
                 if self.is_poisoned() {
-                    return Err(PoisonError::new(returned_guard))
+                    return Err(PoisonError::new(returned_guard));
                 } else {
-                    return Ok(returned_guard)
+                    return Ok(returned_guard);
                 }
             } else if Instant::now().duration_since(start) > timeout {
                 representation.subscribe_read();
@@ -125,13 +119,11 @@ impl<T: ?Sized> RwLock<T> {
             let representation = guard.locks.get_mut(&self.key).unwrap();
 
             if representation.try_write_lock() {
-                let returned_guard = RwLockWriteGuard {
-                    inner: unsafe { &mut *(self as *const _ as *mut _) },
-                };
+                let returned_guard = RwLockWriteGuard { inner: self };
                 if self.is_poisoned() {
-                    return Err(PoisonError::new(returned_guard))
+                    return Err(PoisonError::new(returned_guard));
                 } else {
-                    return Ok(returned_guard)
+                    return Ok(returned_guard);
                 }
             } else if Instant::now().duration_since(start) > timeout {
                 representation.subscribe_write();
@@ -144,12 +136,12 @@ impl<T: ?Sized> RwLock<T> {
 }
 
 pub struct RwLockReadGuard<'l, T: ?Sized> {
-    inner: &'l RwLock<T>
+    inner: &'l RwLock<T>,
 }
 impl<'l, T: ?Sized> std::ops::Deref for RwLockReadGuard<'l, T> {
     type Target = T;
     fn deref(&self) -> &<Self as std::ops::Deref>::Target {
-        unsafe{ &(*self.inner.inner.get()) }
+        unsafe { &(*self.inner.inner.get()) }
     }
 }
 impl<'l, T: ?Sized> Drop for RwLockReadGuard<'l, T> {
@@ -157,23 +149,23 @@ impl<'l, T: ?Sized> Drop for RwLockReadGuard<'l, T> {
         let mut guard = self.inner.manager.write_lock();
         guard.locks.get_mut(&self.inner.key).unwrap().unlock();
         if std::thread::panicking() {
-            unsafe {(*(self.inner as *const _ as *mut RwLock<T>)).poisoned = true};
+            self.inner.poisoned.store(true, Ordering::Relaxed);
         }
     }
 }
 pub struct RwLockWriteGuard<'l, T: ?Sized> {
-    inner: &'l mut RwLock<T>
+    inner: &'l RwLock<T>,
 }
 
 impl<'l, T: ?Sized> std::ops::Deref for RwLockWriteGuard<'l, T> {
     type Target = T;
     fn deref(&self) -> &<Self as std::ops::Deref>::Target {
-        unsafe{ &(*self.inner.inner.get()) }
+        unsafe { &(*self.inner.inner.get()) }
     }
 }
 impl<'l, T: ?Sized> std::ops::DerefMut for RwLockWriteGuard<'l, T> {
     fn deref_mut(&mut self) -> &mut <Self as std::ops::Deref>::Target {
-        unsafe {&mut *self.inner.inner.get()}
+        unsafe { &mut *self.inner.inner.get() }
     }
 }
 impl<'l, T: ?Sized> Drop for RwLockWriteGuard<'l, T> {
@@ -181,7 +173,7 @@ impl<'l, T: ?Sized> Drop for RwLockWriteGuard<'l, T> {
         let mut guard = self.inner.manager.write_lock();
         guard.locks.get_mut(&self.inner.key).unwrap().unlock();
         if std::thread::panicking() {
-            self.inner.poisoned = true;
+            self.inner.poisoned.store(true, Ordering::Relaxed);
         }
     }
 }
