@@ -55,7 +55,7 @@ impl<'l> std::ops::DerefMut for LockManagerWriteGuard<'l> {
     }
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 enum DependencyNode {
     Thread(ThreadId),
     Lock(usize),
