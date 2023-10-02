@@ -1,11 +1,11 @@
 use crate::{Map, Set};
 
 #[derive(Debug)]
-pub struct Graph<NodeType: std::cmp::PartialEq> {
+pub struct Graph<NodeType: std::cmp::PartialEq + std::cmp::Eq + std::hash::Hash> {
     nodes: Map<NodeType, Set<NodeType>>
 }
 
-impl<NodeType: std::cmp::PartialEq> Graph<NodeType> {
+impl<NodeType: std::cmp::PartialEq + std::cmp::Eq + std::hash::Hash> Graph<NodeType> {
     pub fn new() -> Self {
         Graph {nodes: Map::new()}
     }
