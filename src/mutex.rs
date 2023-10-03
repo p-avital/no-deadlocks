@@ -11,6 +11,12 @@ pub struct Mutex<T: ?Sized> {
     inner: UnsafeCell<T>,
 }
 
+impl<T: Default> Default for Mutex<T> {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
+
 impl<T> Mutex<T> {
     pub fn new(inner: T) -> Self {
         let manager = crate::lock_manager::LockManager::get_global_manager();
@@ -36,13 +42,19 @@ impl<T> Mutex<T> {
         }
     }
 
-    // pub fn into_inner(self) -> LockResult<T> {
-    //     if self.poisoned {
-    //         Err(PoisonError::new(self.inner.into_inner()))
-    //     } else {
-    //         Ok(self.inner.into_inner())
-    //     }
-    // }
+    pub fn into_inner(self) -> LockResult<T> {
+        let key = self.key;
+        let poisonned = self.poisoned.load(Ordering::Relaxed);
+        let manager = unsafe { core::ptr::read(&self.manager) };
+        let value = unsafe { core::ptr::read(&self.inner) }.into_inner();
+        core::mem::forget(self);
+        manager.remove_lock(&key);
+        if poisonned {
+            Err(PoisonError::new(value))
+        } else {
+            Ok(value)
+        }
+    }
 }
 
 impl<T: ?Sized> Drop for Mutex<T> {

@@ -10,7 +10,11 @@ pub struct RwLock<T: ?Sized> {
     manager: std::sync::Arc<crate::lock_manager::LockManager>,
     inner: UnsafeCell<T>,
 }
-
+impl<T: Default> Default for RwLock<T> {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
 impl<T> RwLock<T> {
     pub fn new(inner: T) -> Self {
         let manager = crate::lock_manager::LockManager::get_global_manager();

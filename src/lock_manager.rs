@@ -10,8 +10,7 @@ use backtrace::Backtrace;
 
 use crate::Map;
 
-static GLOBAL_MANAGER: AtomicPtr<Arc<LockManager>> =
-    AtomicPtr::new(std::ptr::null_mut() as *mut Arc<LockManager>);
+static GLOBAL_MANAGER: AtomicPtr<Arc<LockManager>> = AtomicPtr::new(std::ptr::null_mut());
 
 pub struct LockManagerReadGuard<'l> {
     inner: &'l LockManagerInner,
@@ -152,7 +151,8 @@ pub struct LockManagerInner {
 }
 
 pub struct LockManager(UnsafeCell<LockManagerInner>);
-
+unsafe impl Send for LockManager {}
+unsafe impl Sync for LockManager {}
 impl LockManagerInner {
     fn new() -> Self {
         LockManagerInner {
@@ -303,7 +303,7 @@ impl LockManager {
             Ordering::Relaxed,
         ) {
             Err(manager) => unsafe {
-                Box::from_raw(new_manager);
+                _ = Box::from_raw(new_manager);
                 (*manager).clone()
             },
             Ok(_) => unsafe { (*new_manager).clone() },
