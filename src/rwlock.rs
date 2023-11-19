@@ -40,9 +40,18 @@ impl<T> RwLock<T> {
         }
     }
 
-    // pub fn into_inner(self) -> T {
-    //     self.inner.into_inner()
-    // }
+    pub fn into_inner(self) -> T {
+        let key = self.key;
+        // Safety: the fields are read, but their container (self) is forgotten: no double frees.
+        // The lock is removed from the manager as in the destructor.
+        unsafe {
+            let manager = core::ptr::read(&self.manager);
+            let value = core::ptr::read(&self.inner).into_inner();
+            core::mem::forget(self);
+            manager.remove_lock(&key);
+            value
+        }
+    }
 }
 
 impl<T: ?Sized> Drop for RwLock<T> {
